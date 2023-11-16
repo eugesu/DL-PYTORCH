@@ -1,7 +1,8 @@
 # Funciones de utilidad para trabajar con MLP y CNN
 # Eugenio Sánchez | Noviembre 2023
-# IIT - ICAI - Comillas
+# IIT | Comillas - ICAI
 
+# importa
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -28,13 +29,13 @@ class MiDataset(Dataset):
         return image, label
 
 
-
-def calcula_aciertos_modelo(loader, model, conj, device = torch.device('cpu')):
+def calcula_aciertos_modelo(loader, model, conj, hacer_reshape = True, device = torch.device('cpu')):
     ''' Calcula y muestra el nº de imágenes correctamente clasificadas, las 
         incorrectas y el porcentaje de aciertos
            - loader: cargador a utilizar
            - model: modelo a evaluar en el conjunto de datos del loader
            - conj: texto libre para indicar el nombre del fichero
+           - hacer_reshape: a True para el caso del MLP
     '''
 
     # desactiva cálculo gradientes
@@ -42,7 +43,9 @@ def calcula_aciertos_modelo(loader, model, conj, device = torch.device('cpu')):
         n_correct = 0
         n_samples = 0
         for imgs, etqs in loader:
-            imgs = imgs.reshape(-1, 28*28).to(device)
+            if hacer_reshape:
+                imgs = imgs.reshape(-1, 28*28)
+            imgs = imgs.to(device)
             etqs = etqs.to(device)  
             outputs = model(imgs)
 
@@ -58,18 +61,21 @@ def calcula_aciertos_modelo(loader, model, conj, device = torch.device('cpu')):
         print(f'   Aciertos ({conj}): {round(acc,3)} %')
 
 
-def calcula_matriz_confusion_modelo(loader, model, conj, num_classes, device = torch.device('cpu')):
+def calcula_matriz_confusion_modelo(loader, model, conj, num_classes, hacer_reshape = True, device = torch.device('cpu')):
     ''' Calcula y muestra la matriz de confusión
            - loader: cargador a utilizar
            - model: modelo a evaluar en el conjunto de datos del loader
            - conj: texto libre para indicar el nombre del fichero
+           - hacer_reshape: a True para el caso del MLP
     '''
 
     # matriz de confusión
     confusion_matrix = torch.zeros(num_classes, num_classes, dtype=float)
     with torch.no_grad():
         for i, (imgs, etqs) in enumerate(loader):
-            imgs = imgs.reshape(-1, 28*28).to(device)
+            if hacer_reshape:
+                imgs = imgs.reshape(-1, 28*28)
+            imgs = imgs.to(device)
             etqs = etqs.to(device)  
             outputs = model(imgs)
             _, predictions = torch.max(outputs, 1)
@@ -106,3 +112,74 @@ def calcula_matriz_confusion_modelo(loader, model, conj, num_classes, device = t
     plt.xlabel('Dígito real')
     plt.ylabel('Dígito estimado')
     plt.show()
+
+
+
+def muestra_ejemplos_fallos(loader, model, conj, digito = 5, hacer_reshape = True, device = torch.device('cpu')):
+    ''' Determina y muestra ejemplos de imágenes mal clasificadas
+           - loader: cargador a utilizar
+           - model: modelo a evaluar en el conjunto de datos del loader
+           - conj: texto libre para indicar el nombre del fichero
+           - digito: el dígito específico que se quiere ver sus fallos
+           - hacer_reshape: a True para el caso del MLP
+    '''
+    
+    # guarda en un nuevo tensor todos los casos incorrectos
+    if hacer_reshape:
+        err_img = torch.empty(1, 28*28, dtype=float)
+    else:
+        err_img = torch.empty(1, 1, 28, 28, dtype=float)
+    
+    err_etq_real = torch.empty(1, 1, dtype=torch.uint8)
+    err_etq_est = torch.empty(1, 1, dtype=torch.uint8)
+
+    with torch.no_grad():
+        for i, (imgs, etqs) in enumerate(loader):
+            if hacer_reshape:
+                imgs = imgs.reshape(-1, 28*28)
+            imgs = imgs.to(device)
+            etqs = etqs.to(device)  
+            outputs = model(imgs)
+            _, predictions = torch.max(outputs, 1)
+
+            # coge los fallos
+            ind_fallos = etqs != predictions
+
+            err_img = torch.cat((err_img, imgs[ind_fallos]), dim=0)
+            err_etq_real = torch.cat((err_etq_real, etqs[ind_fallos].unsqueeze(0)), dim=1)
+            err_etq_est = torch.cat((err_etq_est, predictions[ind_fallos].unsqueeze(0)), dim=1)
+
+    # pinta unos cuantos fallos
+    print(f'Muestra 100 ejemplos de imágenes mal clasificadas en {conj}:')
+    fig = plt.figure(1,figsize=(18, 18))
+    k=1
+    i=0
+    while k<100 and i < len(err_etq_real[0,:])-1:
+        plt.subplot(10,10,k)
+        plt.imshow(err_img[i+1].reshape(28,28), cmap=plt.cm.binary)
+        plt.xticks([])
+        plt.yticks([])
+        plt.title(f'REAL: {err_etq_real[0,i+1].item()} EST:{err_etq_est[0,i+1].item()}')
+        k = k+1
+        i=i+1
+
+    plt.show()
+    
+    # pinta unos cuantos fallos
+    print(f'Muestra 20 ejemplos de imágenes mal clasificadas en {conj} del dígito {digito}:')
+    fig = plt.figure(2,figsize=(15, 3))
+    k=1
+    i=0
+    while k<20 and i < len(err_etq_real[0,:])-1:
+        if err_etq_real[0,i+1].item() == digito:
+            plt.subplot(2,10,k)
+            plt.imshow(err_img[i+1].reshape(28,28), cmap=plt.cm.binary)
+            plt.xticks([])
+            plt.yticks([])
+            plt.title(f'REAL: {err_etq_real[0,i+1].item()} EST:{err_etq_est[0,i+1].item()}')
+            k = k+1
+
+        i=i+1
+
+    plt.show()
+
